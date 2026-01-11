@@ -53,25 +53,42 @@ final class SoundBufferCache {
             return existing.bufferId();
         }
 
-        int bufferId = al.callBlocking(() -> {
-            DecodedPcm pcm = decode(soundPath);
-            int id = AL11.alGenBuffers();
-            AL11.alBufferData(id, pcm.alFormat(), pcm.pcmData(), pcm.sampleRate());
-            pcm.free();
-            return id;
-        });
+        try {
+            int bufferId = al.callBlocking(() -> {
+                DecodedPcm pcm = decode(soundPath);
+                if (pcm == null) {
+                    throw new RuntimeException("Failed to decode sound: " + soundPath);
+                }
+                int id = AL11.alGenBuffers();
+                if (id == 0) {
+                    throw new IllegalStateException("Failed to generate OpenAL buffer: " + AL11.alGetError());
+                }
+                AL11.alBufferData(id, pcm.alFormat(), pcm.pcmData(), pcm.sampleRate());
+                int err = AL11.alGetError();
+                if (err != AL11.AL_NO_ERROR) {
+                    AL11.alDeleteBuffers(id);
+                    throw new IllegalStateException("Failed to upload buffer data: " + err);
+                }
+                pcm.free();
+                return id;
+            });
 
-        Entry entry = new Entry(bufferId, new AtomicInteger(1));
-        Entry prev = cache.putIfAbsent(soundPath, entry);
-        if (prev != null) {
-            al.submit(() -> AL11.alDeleteBuffers(bufferId));
-            prev.refs.incrementAndGet();
-            return prev.bufferId();
+            Entry entry = new Entry(bufferId, new AtomicInteger(1));
+            Entry prev = cache.putIfAbsent(soundPath, entry);
+            if (prev != null) {
+                al.submit(() -> AL11.alDeleteBuffers(bufferId));
+                prev.refs.incrementAndGet();
+                return prev.bufferId();
+            }
+
+            bufferToPath.put(bufferId, soundPath);
+
+            return bufferId;
+        } catch (Exception e) {
+            GFBsAuralis.LOGGER.error("Failed to acquire sound buffer for: {} ;E: {}", soundPath, e.getMessage());
+            // Return an invalid buffer ID instead of throwing an exception
+            return -1;
         }
-
-        bufferToPath.put(bufferId, soundPath);
-
-        return bufferId;
     }
 
     void releaseBuffer(int bufferId) {
@@ -111,9 +128,15 @@ final class SoundBufferCache {
             );
             try (InputStream in = r.open()) {
                 return OggVorbisDecoder.decodeFully(in);
+            } catch (Exception e) {
+                GFBsAuralis.LOGGER.warn("Failed to decode OGG: {} ;E: {}", soundPath, e.getMessage());
+                throw new RuntimeException("Failed to decode OGG: " + soundPath + " ;E: " + e);
             }
+        } catch (IllegalArgumentException e) {
+            GFBsAuralis.LOGGER.warn("Missing sound resource: {} ;E: {}", soundPath, e.getMessage());
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to decode OGG: " + soundPath, e);
+            throw new RuntimeException("Failed to decode OGG: " + soundPath + " ;E: " + e);
         }
     }
 }

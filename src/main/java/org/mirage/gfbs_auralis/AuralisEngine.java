@@ -58,13 +58,24 @@ public final class AuralisEngine implements IAuralisEngine {
         Objects.requireNonNull(soundEvent, "soundEvent");
         ResourceLocation eventId = soundEvent.getLocation();
 
-        Sound chosen = resolveToConcreteSound(eventId);
-        ResourceLocation soundPath = chosen.getPath();
-        int bufferId = bufferCache.acquireBuffer(soundPath);
+        try {
+            Sound chosen = resolveToConcreteSound(eventId);
+            String soundPathStr = chosen.getLocation().toString();
+            String correctedPathStr = soundPathStr.replaceFirst("^([a-zA-Z0-9_]+:)", "$1sounds/") + ".ogg";
+            ResourceLocation soundPath = ResourceLocation.tryParse(correctedPathStr);
 
-        AuralisSoundInstanceImpl inst = new AuralisSoundInstanceImpl(al, bufferId, bufferCache, sourcePool);
-        instances.put(inst, inst);
-        return inst;
+            int bufferId = bufferCache.acquireBuffer(soundPath);
+            if (bufferId == -1) {
+                throw new RuntimeException("Failed to acquire valid buffer for sound: " + soundPath);
+            }
+
+            AuralisSoundInstanceImpl inst = new AuralisSoundInstanceImpl(al, bufferId, bufferCache, sourcePool);
+            instances.put(inst, inst);
+            return inst;
+        } catch (Exception e) {
+            GFBsAuralis.LOGGER.error("Failed to create sound instance for: {} ;E: {}", eventId, e.getMessage());
+            return new AuralisSoundInstanceImpl(al, -1, bufferCache, sourcePool);
+        }
     }
 
     private Sound resolveToConcreteSound(ResourceLocation soundEventId) {
@@ -97,19 +108,28 @@ public final class AuralisEngine implements IAuralisEngine {
     @Override
     public void tick() {
         Camera cam = mc.gameRenderer.getMainCamera();
-        Vec3 p = cam.getPosition();
+        Vec3 listenerPos = cam.getPosition();
         float pitch = cam.getXRot();
         float yaw = cam.getYRot();
         Vec3 forward = Vec3.directionFromRotation(pitch, yaw);
         Vec3 up = Vec3.directionFromRotation(pitch - 90.0F, yaw);
 
         al.submit(() -> {
-            AL11.alListener3f(AL11.AL_POSITION, (float) p.x, (float) p.y, (float) p.z);
-            float[] ori = new float[] {
+            AL11.alDopplerFactor(0.0f);
+
+            AL11.alListener3f(AL11.AL_POSITION, (float) listenerPos.x, (float) listenerPos.y, (float) listenerPos.z);
+            AL11.alListener3f(AL11.AL_VELOCITY, 0f, 0f, 0f);
+
+            float[] ori = new float[]{
                     (float) forward.x, (float) forward.y, (float) forward.z,
-                    (float) up.x,      (float) up.y,      (float) up.z
+                    (float) up.x, (float) up.y, (float) up.z
             };
             AL11.alListenerfv(AL11.AL_ORIENTATION, ori);
+
+            for (AuralisSoundInstanceImpl inst : instances.values()) {
+                inst.applyVelocityZeroOnALThread();
+                inst.applyDistanceAttenuationOnALThread(listenerPos);
+            }
         });
 
         sourcePool.tickRecycleEndedSources();
@@ -120,7 +140,8 @@ public final class AuralisEngine implements IAuralisEngine {
         for (AuralisSoundInstanceImpl inst : instances.values()) {
             try {
                 inst.forceStopAndFree();
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
         instances.clear();
 

@@ -43,13 +43,16 @@ final class OpenALSourcePool implements AutoCloseable {
         al.executeBlocking(() -> {
             for (int i = 0; i < maxSources; i++) {
                 int id = AL11.alGenSources();
+                if (id == 0) {
+                    throw new IllegalStateException("Failed to generate OpenAL source: " + AL11.alGetError());
+                }
                 free.addLast(new SourceHandle(id));
             }
         });
     }
 
     SourceHandle acquire() {
-        return acquire(1000); // 默认1秒超时
+        return acquire(2000); // 默认1秒超时
     }
 
     /**
@@ -150,11 +153,14 @@ final class OpenALSourcePool implements AutoCloseable {
         for (SourceHandle handle : inUse) {
             try {
                 // Get the current state of the source
-                int state = al.callBlocking(() -> AL11.alGetSourcei(handle.sourceId(), AL11.AL_SOURCE_STATE));
-                
-                // If the source is stopped, add it to the release list
-                if (state == AL11.AL_STOPPED) {
-                    toRelease.add(handle);
+                // Only recycle if the source is not associated with any instance
+                if (sourceToInstance.get(handle) == null) {
+                    int state = al.callBlocking(() -> AL11.alGetSourcei(handle.sourceId(), AL11.AL_SOURCE_STATE));
+                    
+                    // If the source is stopped, add it to the release list
+                    if (state == AL11.AL_STOPPED) {
+                        toRelease.add(handle);
+                    }
                 }
             } catch (Exception e) {
                 // If we can't get the state, skip this source

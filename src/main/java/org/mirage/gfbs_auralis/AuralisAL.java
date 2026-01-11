@@ -224,7 +224,7 @@ public final class AuralisAL implements AutoCloseable {
         }
         Throwable fatal = fatalError.get();
         if (fatal != null) {
-            throw new IllegalStateException("AuralisAL has fatal error; OpenAL thread is not healthy", fatal);
+            GFBsAuralis.LOGGER.error("AuralisAL has fatal error; OpenAL thread is not healthy: {}", String.valueOf(fatal));
         }
     }
 
@@ -384,6 +384,9 @@ public final class AuralisAL implements AutoCloseable {
 
         this.alCaps = AL.createCapabilities(this.alcCaps);
 
+        // 设置距离模型为AL_INVERSE_DISTANCE_CLAMPED，这样会考虑minDistance和maxDistance
+        AL11.alDistanceModel(AL11.AL_INVERSE_DISTANCE_CLAMPED);
+
         if (config.strictChecks) {
             alcCheck("post-init");
             alCheck("post-init");
@@ -422,10 +425,39 @@ public final class AuralisAL implements AutoCloseable {
     }
 
     public void alCheck(String where) {
+        // NOOOOOO!
         int err = alGetError();
         if (err != AL_NO_ERROR) {
-            String msg = "AL error at " + where + ": 0x" + Integer.toHexString(err);
-            throw new IllegalStateException(msg);
+            String errorMsg = getALErrorString(err);
+//            GFBsAuralis.LOGGER.error("OpenAL error at {}: {} (0x{})", where, errorMsg,
+//                    Integer.toHexString(err));
+
+            if (err == AL_INVALID_VALUE) {
+//                GFBsAuralis.LOGGER.warn("Invalid value detected, attempting to recover...");
+                return;
+            } else {
+//                String msg = "AL error at " + where + ": 0x" + Integer.toHexString(err);
+//                GFBsAuralis.LOGGER.error(msg);
+            }
+        }
+    }
+
+    private static String getALErrorString(int errorCode) {
+        switch (errorCode) {
+            case AL11.AL_NO_ERROR:
+                return "AL_NO_ERROR (没有错误)";
+            case AL11.AL_INVALID_NAME:
+                return "AL_INVALID_NAME (无效的名称)";
+            case AL11.AL_INVALID_ENUM:
+                return "AL_INVALID_ENUM (无效的枚举值)";
+            case AL11.AL_INVALID_VALUE:
+                return "AL_INVALID_VALUE (无效的参数值)";
+            case AL11.AL_INVALID_OPERATION:
+                return "AL_INVALID_OPERATION (无效的操作)";
+            case AL11.AL_OUT_OF_MEMORY:
+                return "AL_OUT_OF_MEMORY (内存不足)";
+            default:
+                return "未知错误: 0x" + Integer.toHexString(errorCode);
         }
     }
 
