@@ -36,7 +36,7 @@ public class GFBsAuralisConfig {
 
             maxConcurrentSounds = builder
                     .comment("Maximum number of concurrent sounds per player")
-                    .defineInRange("maxConcurrentSounds", 16, 1, 64);
+                    .defineInRange("maxConcurrentSounds", 64, 1, 128);
 
             defaultVolume = builder
                     .comment("Default volume for sounds (0.0 to 1.0)")
