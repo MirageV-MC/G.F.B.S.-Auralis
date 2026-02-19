@@ -33,7 +33,7 @@ This mod is suitable for scenarios that require higher‑level sound control, su
 
 ### 4. Powerful Command System (Command‑Block Compatible)
 
-* All audio operations can be performed via the `/auralis` command  
+* All audio operations can be performed via the `/gfbs_auralis` command  
 * Supports **player objects or player groups (@p / @a / specified players)**  
 * Fully compatible with command blocks and server consoles
 
