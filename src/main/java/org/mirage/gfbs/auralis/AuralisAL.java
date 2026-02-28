@@ -395,6 +395,16 @@ public final class AuralisAL implements AutoCloseable {
             startLatch.countDown();
         } finally {
             try {
+                while (!queue.isEmpty()) {
+                    ALTask task = queue.poll();
+                    if (task != null) {
+                        try {
+                            task.run();
+                        } catch (Throwable t2) {
+                            GFBsAuralis.LOGGER.warn("Error executing queued task during shutdown: {}", t2.getMessage());
+                        }
+                    }
+                }
                 destroyOpenAL();
                 GFBsAuralis.LOGGER.info("OpenAL resources destroyed successfully");
             } catch (Throwable t2) {
